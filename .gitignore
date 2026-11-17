@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+# kisisel bakis/kalibrasyon verisi (yuz/goz ozellikleri) depoya girmesin
+*.npz
+gaze*.csv
