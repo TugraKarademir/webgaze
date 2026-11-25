@@ -9,6 +9,8 @@ kişiye özel kalibrasyonla ekran koordinatına çevrilir.
 - Bölgeye oturtma ve titreme bastırma; CSV kaydına bölge adı yazılır
 - Tıklamalarla sürekli kalibrasyon
 - Ekran üstünde tıklanamaz bakış göstergesi, bakışla fare kontrolü, OpenTrack'e baş takibi (UDP)
+- Intel RealSense desteği (`--realsense`): RGB ya da kızılötesi görüntü + derinlik. Derinlikten gözlerin
+  gerçek 3B konumu ölçülür ve modele eklenir (baş hareketini telafi için); doğrulamada uzaklık ölçülerek kullanılır
 - `analyze.py`: kaydedilen kalibrasyon verisinde farklı model ayarlarını karşılaştırır
 
 ## Kurulum ve çalıştırma
@@ -18,6 +20,16 @@ Python 3.10–3.12 gerekir. `run.bat` ilk açılışta ortamı kendisi kurar.
 run.bat
 run.bat --aoi grid:3x3
 run.bat --camera 1 --width 1280 --height 720 --distance 45
+```
+
+### Intel RealSense (D400 serisi)
+USB 3 portuna takın. Varsayılan RGB + derinlik; `--rs-stream ir` kızılötesi görüntüyü kullanır (ortam ışığından
+az etkilenir, projektör kapatılır; `--rs-emitter` ile açık tutulabilir).
+
+```bat
+run.bat --realsense
+run.bat --realsense --rs-stream ir --fps 60
+run.bat --realsense --features eyes      # derinliği modelde kullanma (karşılaştırma için)
 ```
 
 ## Kısayollar

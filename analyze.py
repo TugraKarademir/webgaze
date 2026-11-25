@@ -42,6 +42,11 @@ def feats_eyes_pos(R):
                             R[:, 9], R[:, 10]])
 
 
+def feats_eyes3d(R):
+    """RealSense derinliginden olculen bas konumu ile (sadece RealSense kayitlarinda)."""
+    return np.column_stack([feats_per_eye_only(R), R[:, 15] / 100, R[:, 16] / 100, R[:, 17] / 100])
+
+
 AVG_COLS, PER_EYE_COLS = ([0], [1]), ([0, 2], [1, 3])
 FEATS = {"ortalama+bas": (feats_avg, AVG_COLS), "ayri goz+bas": (feats_per_eye, PER_EYE_COLS),
          "sadece goz": (feats_eyes_only, AVG_COLS), "goz+konum (aci yok)": (feats_no_pose, AVG_COLS),
@@ -55,11 +60,7 @@ def smooth(R, pid, k):
     out = R.copy()
     for p in np.unique(pid):
         idx = np.where(pid == p)[0]
-        X = R[idx]
-        c = np.cumsum(np.vstack([np.zeros((1, X.shape[1])), X]), axis=0)
-        n = np.arange(1, len(X) + 1)
-        lo = np.maximum(0, n - k)
-        out[idx] = (c[n] - c[lo]) / (n - lo)[:, None]
+        out[idx] = w.smooth_rows(R[idx], k)
     return out
 
 
@@ -70,7 +71,7 @@ def evaluate(d, feat_cols, lam, k, outliers):
     cR, vR = smooth(cR, cp, k), smooth(vR, vp, k)
     F, Y = [], []
     for p in np.unique(cp):
-        f = feat(cR[cp == p])
+        f = w.finite_rows(feat(cR[cp == p]))
         if outliers:
             keep = w.drop_outliers(np.column_stack([f[:, :2], np.arange(len(f))]))[:, -1].astype(int)
             f = f[keep]
@@ -80,7 +81,7 @@ def evaluate(d, feat_cols, lam, k, outliers):
     m.fit(np.vstack(F), np.vstack(Y), lam=lam)
     acc, prec = [], []
     for p in np.unique(vp):
-        P = m.predict(feat(vR[vp == p]))
+        P = m.predict(w.finite_rows(feat(vR[vp == p])))
         acc.append(np.linalg.norm(P.mean(0) - vY[vp == p][0]))
         prec.append(np.linalg.norm(P - P.mean(0), axis=1).mean())
     return float(np.mean(acc)), float(np.mean(prec))
@@ -89,8 +90,11 @@ def evaluate(d, feat_cols, lam, k, outliers):
 def main():
     d = np.load(sys.argv[1] if len(sys.argv) > 1 else "calib_data.npz")
     print(f"kalibrasyon ornegi {len(d['calib_R'])}, dogrulama ornegi {len(d['valid_R'])}")
+    feats = dict(FEATS)
+    if d["calib_R"].shape[1] > 18 and np.isfinite(d["calib_R"][:, 18]).any():
+        feats["ayri goz+3B (RealSense)"] = (feats_eyes3d, PER_EYE_COLS)
     rows = []
-    for (name, feat), lam, k, out in itertools.product(FEATS.items(), [0.1, 1, 10, 100], [1, 3, 6, 10], [True]):
+    for (name, feat), lam, k, out in itertools.product(feats.items(), [0.1, 1, 10, 100], [1, 3, 6, 10], [True]):
         acc, prec = evaluate(d, feat, lam, k, out)
         rows.append((acc, prec, name, lam, k))
     rows.sort()
