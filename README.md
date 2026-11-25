@@ -33,7 +33,7 @@ run.bat --realsense --features eyes      # derinliği modelde kullanma (karşıl
 ```
 
 ## Kısayollar
-F5 bölgeler · F6 baş merkez · F7 gösterge · F8 bakışla fare · F9 yeniden kalibrasyon · F10 çıkış
+F4 deneme ekranı · F5 bölgeler · F6 baş merkez · F7 gösterge · F8 bakışla fare · F9 yeniden kalibrasyon · F10 çıkış
 
 ## Doğruluk
 Web kamerasıyla tipik hata 2–3°'dir (Tobii ~0.5–1°). 21.5" ekran, 45 cm uzaklık ve dahili kamerayla

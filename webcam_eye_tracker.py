@@ -11,6 +11,7 @@ Ne yapar:
   * Istege bagli: bakisla fare kontrolu, CSV kaydi, OpenTrack'e bas takibi (UDP)
 
 Kisayollar (her yerde calisir):
+  F4  deneme ekrani: bolgelere sirayla bakilir, bolge isabet orani olculur
   F5  tum bolgelerin cercevesini goster/gizle
   F6  bas takibi sifirla (OpenTrack merkez)
   F7  bakis gostergesini ac/kapat
@@ -68,6 +69,8 @@ SETTLE, COLLECT = 0.7, 1.0  # kalibrasyon noktasi basina saniye
 CLICK_WINDOW = (0.35, 0.05)
 CLICK_WEIGHT = 3   # her tiklama ornegi kalibrasyon ornegine gore bu kadar agirlikli
 CLICK_MAX = 600    # en fazla bu kadar tiklama ornegi tutulur (eskiler duser)
+
+TEST_SETTLE, TEST_COLLECT = 1.0, 1.5  # deneme ekraninda hedef basina bekleme / olcum (saniye)
 
 
 def eye_features(p, e):
@@ -523,7 +526,8 @@ class App:
         print(report, f"-> kaydedildi: {self.args.save}, calib_data.npz")
         self.cc.itemconfigure(self.ctext, text=(
             f"{report}\n\nKalibrasyon '{self.args.save}' dosyasina kaydedildi.\n\n"
-            "Devam: BOSLUK     Yeniden kalibre: R"))
+            "Devam: BOSLUK     Deneme ekrani: T     Yeniden kalibre: R"))
+        self.cwin.bind("t", lambda e: (self.cwin.destroy(), self.run_test()))
         self.cwin.bind("<space>", lambda e: self._close_calib())
         self.cwin.bind("r", lambda e: self._recal())
 
@@ -556,7 +560,8 @@ class App:
         self.fx, self.fy = OneEuro(), OneEuro()
         self.recent = collections.deque(maxlen=SMOOTH)
         self.tracking = True
-        print("Takip basladi. F5 bolgeler | F6 bas merkez | F7 gosterge | F8 fare | F9 kalibrasyon | F10 cikis")
+        print("Takip basladi. F4 deneme | F5 bolgeler | F6 bas merkez | F7 gosterge | F8 fare | "
+              "F9 kalibrasyon | F10 cikis")
         if not self.args.no_click_learn and self.model.F is None:
             print("Not: bu kalibrasyon dosyasi eski, tiklamayla ogrenme icin yeniden kalibre edin.")
         self.gaze_loop()
@@ -635,7 +640,115 @@ class App:
         self.model.fit(np.vstack([calF, cF]), np.vstack([calY, cY]))
         self.model.F, self.model.Y = calF, calY  # kalibrasyon kumesi tiklamalarla sisirilmesin
 
+    # ---------- deneme ekrani ----------
+    def run_test(self):
+        """Bolgeler sirayla yesil yanar; kullanici bakar, orneklerin ne kadari dogru bolgeye dustu olculur."""
+        regions = self.regions if self.regions and not self.auto else aoi.grid_regions(3, 3, SCREEN_W, SCREEN_H)
+        self.tracking = False
+        if self.ov:
+            self.ov.withdraw()
+        win = tk.Toplevel(self.root)
+        win.attributes("-fullscreen", True)
+        win.attributes("-topmost", True)
+        c = tk.Canvas(win, bg="#1e1e1e", highlightthickness=0, cursor="none")
+        c.pack(fill="both", expand=True)
+        win.focus_force()
+        for r in regions:
+            c.create_rectangle(r.x, r.y, r.x + r.w, r.y + r.h, outline="#555555", width=2)
+            c.create_text(r.x + 10, r.y + 10, anchor="nw", text=r.name, fill="#777777", font=("Segoe UI", 12))
+        ring = c.create_oval(0, 0, 0, 0, outline="#00d8ff", width=3)
+        intro = c.create_text(SCREEN_W / 2, SCREEN_H / 2, fill="white", font=("Segoe UI", 20), justify="center",
+                              text="DENEME EKRANI\n\nYesil yanan bolgeye bakin (mavi halka bakisinizi gosterir).\n\n"
+                                   "Baslamak icin BOSLUK, cikmak icin ESC")
+        order = random.sample(regions, min(len(regions), 12))
+        results = []
+        fx, fy = OneEuro(), OneEuro()
+        recent = collections.deque(maxlen=SMOOTH)
+
+        def alive():
+            return bool(win.winfo_exists())
+
+        def close():
+            self.tracker.stop_rec()
+            if alive():
+                win.destroy()
+            self.start_tracking()
+
+        def show_ring():
+            if not alive():
+                return
+            lt = self.tracker.get_latest()
+            if lt and not lt[2]:
+                recent.append(lt[1])
+                f = model_features(np.mean(recent, axis=0))
+                if np.isfinite(f).all():
+                    x, y = self.model.predict(f)[0]
+                    x, y = fx(x, lt[0]), fy(y, lt[0])
+                    c.coords(ring, x - 20, y - 20, x + 20, y + 20)
+            win.after(15, show_ring)
+
+        def step(i):
+            if not alive():
+                return
+            c.delete("target")
+            if i == len(order):
+                finish()
+                return
+            r = order[i]
+            c.create_rectangle(r.x + 3, r.y + 3, r.x + r.w - 3, r.y + r.h - 3, fill="#16351f", outline="#2ecc40",
+                               width=4, tags="target")
+            c.create_text(r.x + r.w / 2, r.y + r.h / 2, text=f"Buraya bakin  ({i + 1}/{len(order)})",
+                          fill="#2ecc40", font=("Segoe UI", 20), tags="target")
+            c.tag_raise(ring)
+            win.after(int(1000 * TEST_SETTLE), lambda: start_collect(i, r))
+
+        def start_collect(i, r):
+            if alive():
+                self.tracker.start_rec()
+                win.after(int(1000 * TEST_COLLECT), lambda: collect(i, r))
+
+        def collect(i, r):
+            rows = self.tracker.stop_rec()
+            if not alive():
+                return
+            P = np.empty((0, 2))
+            if rows:
+                F = finite_rows(model_features(smooth_rows(np.array(rows)[:, 1:])))
+                if len(F):
+                    P = self.model.predict(F)
+            hits = 0
+            for x, y in P:
+                got = aoi.nearest(regions, x, y, self.args.snap)
+                hits += got is not None and got.name == r.name
+            results.append((r.name, hits, len(P)))
+            step(i + 1)
+
+        def finish():
+            total = sum(n for _, _, n in results)
+            hit = sum(h for _, h, _ in results)
+            per = "   ".join(f"{name}: %{100 * h / n:.0f}" if n else f"{name}: -" for name, h, n in results)
+            msg = (f"DENEME SONUCU\n\nBolge isabeti: %{100 * hit / max(total, 1):.0f}   "
+                   f"({len(results)} hedef, {total} ornek)\n\n{per}\n\nKapat: BOSLUK / ESC     Tekrar: T")
+            print(msg.replace("\n\n", "\n"))
+            c.create_rectangle(SCREEN_W * 0.08, SCREEN_H * 0.3, SCREEN_W * 0.92, SCREEN_H * 0.7,
+                               fill="#1e1e1e", outline="#888888")
+            c.create_text(SCREEN_W / 2, SCREEN_H / 2, text=msg, fill="white", font=("Segoe UI", 18),
+                          justify="center", width=SCREEN_W * 0.8)
+            win.bind("<space>", lambda e: close())
+            win.bind("t", lambda e: (win.destroy(), self.run_test()))
+
+        def begin(_):
+            win.unbind("<space>")
+            c.delete(intro)
+            step(0)
+
+        win.bind("<space>", begin)
+        win.bind("<Escape>", lambda e: close())
+        show_ring()
+
     def poll_keys(self):
+        if self._pressed(0x73) and self.tracking:  # F4
+            self.run_test()
         if self._pressed(0x01) and self.tracking and not self.mouse and not self.args.no_click_learn \
                 and self.model.F is not None:  # sol tik (bakisla fare acikken dongusel olur, atla)
             self.learn_click()
