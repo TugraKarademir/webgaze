@@ -19,11 +19,12 @@ Python 3.10–3.12 gerekir. `run.bat` ilk açılışta ortamı kendisi kurar.
 ```bat
 run.bat
 run.bat --aoi grid:3x3
-run.bat --camera 1 --width 1280 --height 720 --distance 45
+run.bat --list-cameras
+run.bat --camera C920 --width 1280 --height 720 --distance 45
 ```
 
 ### Intel RealSense (D400 serisi)
-USB 3 portuna takın. Varsayılan RGB + derinlik; `--rs-stream ir` kızılötesi görüntüyü kullanır (ortam ışığından
+USB 3 portuna takın. Takılıysa kamera seçilmediğinde otomatik kullanılır (dahili kamera için `--camera 0`). Varsayılan RGB + derinlik; `--rs-stream ir` kızılötesi görüntüyü kullanır (ortam ışığından
 az etkilenir, projektör kapatılır; `--rs-emitter` ile açık tutulabilir).
 
 ```bat

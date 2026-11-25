@@ -103,9 +103,49 @@ class RealSenseSource:
         self.pipe.stop()
 
 
+def realsense_connected():
+    try:
+        import pyrealsense2 as rs
+        return len(rs.context().devices) > 0
+    except Exception:
+        return False
+
+
+def list_cameras():
+    """(indeks, ad) listesi. Indeksler OpenCV/DirectShow siralamasidir (--camera ile verilen)."""
+    try:
+        from cv2_enumerate_cameras import enumerate_cameras
+        return [(c.index, c.name) for c in enumerate_cameras(cv2.CAP_DSHOW)]
+    except ImportError:
+        return []
+
+
+def resolve_camera(camera):
+    """--camera: sayi ya da adin bir parcasi ('integrated', 'C920' ...) -> indeks."""
+    if camera is None:
+        return 0
+    if str(camera).isdigit():
+        return int(camera)
+    cams = list_cameras()
+    for idx, name in cams:
+        # RealSense'in DirectShow 'Depth' ucu siradan goruntu vermez, ad aramasinda atla
+        if str(camera).lower() in name.lower() and not name.lower().rstrip().endswith("depth"):
+            return idx
+    names = ", ".join(n for _, n in cams) or "liste alinamadi"
+    raise RuntimeError(f"'{camera}' adinda kamera bulunamadi. Bagli kameralar: {names}")
+
+
+def print_cameras():
+    print("Web kameralari (--camera ile secin, sayi ya da adin bir parcasi):")
+    for idx, name in list_cameras():
+        note = "  (RealSense icin --realsense kullanin)" if "realsense" in name.lower() else ""
+        print(f"  {idx}: {name}{note}")
+    print("RealSense:", "bagli" if realsense_connected() else "bagli degil")
+
+
 def open_source(args):
     size = (args.width, args.height)
     if args.realsense:
         emitter = True if args.rs_emitter else None
         return RealSenseSource(size, args.fps, args.rs_stream, emitter)
-    return WebcamSource(args.camera, size, args.fps)
+    return WebcamSource(resolve_camera(args.camera), size, args.fps)

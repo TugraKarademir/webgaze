@@ -787,7 +787,9 @@ class App:
 
 def main():
     ap = argparse.ArgumentParser(description="Web kamerasi ile goz takibi (Tobii benzeri)")
-    ap.add_argument("--camera", type=int, default=0, help="kamera indeksi")
+    ap.add_argument("--camera", help="web kamerasi: indeks (0, 1, ...) ya da adin bir parcasi (ornek: C920). "
+                                     "Verilirse RealSense bagli olsa da bu kamera kullanilir")
+    ap.add_argument("--list-cameras", action="store_true", help="bagli kameralari listele ve cik")
     ap.add_argument("--width", type=int, default=640, help="kamera genisligi")
     ap.add_argument("--height", type=int, default=480, help="kamera yuksekligi")
     ap.add_argument("--fps", type=int, default=30, help="kare hizi (RealSense 640x480'de 60 da destekler)")
@@ -811,7 +813,15 @@ def main():
     ap.add_argument("--blink", type=float, default=0.15, help="goz kirpma esigi (goz aciklik orani)")
     ap.add_argument("--opentrack", action="store_true", help="bas pozunu OpenTrack'e UDP ile gonder")
     ap.add_argument("--opentrack-port", type=int, default=4242)
-    App(ap.parse_args()).run()
+    args = ap.parse_args()
+    if args.list_cameras:
+        sources.print_cameras()
+        return
+    # Kamera secilmediyse ve RealSense takiliysa onu kullan (dahili kamera yerine)
+    if not args.realsense and args.camera is None and sources.realsense_connected():
+        args.realsense = True
+        print("RealSense bulundu, o kullaniliyor (web kamerasi icin --camera 0)")
+    App(args).run()
 
 
 if __name__ == "__main__":
